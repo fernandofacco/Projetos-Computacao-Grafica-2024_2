@@ -69,6 +69,8 @@ std::vector<Object> objects;
 
 int selectedObjectIndex = -1;
 
+float scaleFactor = 1.0f; // Variável de escala
+
 // Função MAIN
 int main()
 {
@@ -199,8 +201,9 @@ void renderObjects(const std::vector<Object>& objects, Shader& shader, float ang
             else if (rotateZ) {
                 obj.model = glm::rotate(obj.model, angle, glm::vec3(0.0f, 0.0f, 1.0f));
             }
+			obj.model = glm::scale(obj.model, glm::vec3(scaleFactor, scaleFactor, scaleFactor));
         }
-	
+
 		if (i == 0) {
             obj.model = glm::translate(obj.model, glm::vec3(-3.0f, 0.0f, 0.0f));
         } else if (i == 1) {
@@ -312,6 +315,13 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 				}
 			}
 		}
+    }
+
+	if (key == GLFW_KEY_KP_ADD || key == GLFW_KEY_EQUAL) {
+        scaleFactor += 0.1f;
+    } else if (key == GLFW_KEY_KP_SUBTRACT || key == GLFW_KEY_MINUS) {
+        scaleFactor -= 0.1f;
+        if (scaleFactor < 0.1f) scaleFactor = 0.1f; // Previne escala negativa ou zero
     }
 }
 /*
