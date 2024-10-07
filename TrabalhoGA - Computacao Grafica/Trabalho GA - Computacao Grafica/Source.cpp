@@ -29,8 +29,6 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 
 void mouse_callback(GLFWwindow* window, double xposIn, double yposIn);
 
-// void mouse_callback_click(GLFWwindow* window, int button, int action, int mods);
-
 void userKeyInput(GLFWwindow* window);
 
 struct Object {
@@ -65,8 +63,6 @@ bool cursorEnabled = false;
 
 std::vector<Object> objects;
 
-// Object* selectedObject = nullptr;
-
 int selectedObjectIndex = -1;
 
 float scaleFactor = 1.0f; // Variável de escala
@@ -76,25 +72,10 @@ int main()
 {
 	// Inicialização da GLFW
 	glfwInit();
-	//Muita atenção aqui: alguns ambientes não aceitam essas configurações
-	//Você deve adaptar para a versão do OpenGL suportada por sua placa
-	//Sugestão: comente essas linhas de código para desobrir a versão e
-	//depois atualize (por exemplo: 4.5 com 4 e 5)
-	//glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);	
-	//glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-	//glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-	//Essencial para computadores da Apple
-//#ifdef __APPLE__
-//	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-//#endif
 
 	// Criação da janela GLFW
 	GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "Ola 3D --- Fernando Facco Rodrigues e Luis Henrique Daltoe Dorr!", nullptr, nullptr);
 	glfwMakeContextCurrent(window);
-
-	// Fazendo o registro da função de callback para a janela GLFW
-	// glfwSetKeyCallback(window, key_callback);
 
     glfwSetCursorPosCallback(window, mouse_callback);
 
@@ -217,7 +198,6 @@ void renderObjects(const std::vector<Object>& objects, Shader& shader, float ang
 		
 		//Propriedades da câmera
 		shader.setVec3("cameraPos",cameraPos.x, cameraPos.y, cameraPos.z);
-		shader.setVec3("lightPos", 50.0f, 10.0f, 50.0f);
 
 		// Chamada de desenho - drawcall
 		// Poligono Preenchido - GL_TRIANGLES
@@ -255,20 +235,6 @@ void userKeyInput(GLFWwindow* window)
 		rotateZ = true;
 	}
 
-		if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS)
-	{
-		rotateX = true;
-		rotateY = false;
-		rotateZ = false;
-	}
-
-	if (glfwGetKey(window, GLFW_KEY_Y) == GLFW_PRESS)
-	{
-		rotateX = false;
-		rotateY = true;
-		rotateZ = false;
-	}
-
 	if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS)
 	{
 		rotateX = false;
@@ -290,7 +256,7 @@ void userKeyInput(GLFWwindow* window)
 }
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    if (key == GLFW_KEY_C && action == GLFW_PRESS) {
+    if (key == GLFW_KEY_H && action == GLFW_PRESS) {
         // Alterna o estado do cursor
         cursorEnabled = !cursorEnabled;
 
@@ -324,35 +290,6 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         if (scaleFactor < 0.1f) scaleFactor = 0.1f; // Previne escala negativa ou zero
     }
 }
-/*
-void mouse_callback_click(GLFWwindow* window, int button, int action, int mods) {
-    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-        double xpos, ypos;
-        glfwGetCursorPos(window, &xpos, &ypos);
-
-        // Obtém as matrizes de visualização e projeção
-        glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
-        glm::mat4 projection = glm::perspective(glm::radians(39.6f), (float)WIDTH / HEIGHT, 0.1f, 100.0f);
-
-        // Converte as coordenadas de tela para o espaço de coordenadas Normalized Device Coordinates (NDC)
-        float x = (2.0f * xpos) / WIDTH - 1.0f;
-        float y = 1.0f - (2.0f * ypos) / HEIGHT;
-        float z = 1.0f;
-
-        // Cria o vetor do raio em NDC
-        glm::vec3 rayNdc = glm::vec3(x, y, z);
-        glm::vec4 rayClip = glm::vec4(rayNdc.x, rayNdc.y, -1.0f, 1.0f);
-        glm::vec4 rayEye = glm::inverse(projection) * rayClip;
-        rayEye = glm::vec4(rayEye.x, rayEye.y, -1.0f, 0.0f);
-
-        // Converte para o espaço do mundo
-        glm::vec3 rayWorld = glm::vec3(glm::inverse(view) * rayEye);
-        glm::vec3 ray = glm::normalize(rayWorld);
-
-        glm::vec3 rayOrigin = cameraPos; // Posição do ponto de origem do seu ray
-    }
-}
-*/
 
 void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
 	float xpos = static_cast<float>(xposIn);
