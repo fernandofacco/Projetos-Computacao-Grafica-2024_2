@@ -67,6 +67,8 @@ int selectedObjectIndex = -1;
 
 float scaleFactor = 1.0f; // Variável de escala
 
+glm::vec3 objectPosition(0.0f, 0.0f, 0.0f); // Inicialmente no centro
+
 // Função MAIN
 int main()
 {
@@ -75,6 +77,7 @@ int main()
 
 	// Criação da janela GLFW
 	GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "Ola 3D --- Fernando Facco Rodrigues e Luis Henrique Daltoe Dorr!", nullptr, nullptr);
+	
 	glfwMakeContextCurrent(window);
 
     glfwSetCursorPosCallback(window, mouse_callback);
@@ -169,41 +172,47 @@ int main()
 }
 
 void renderObjects(const std::vector<Object>& objects, Shader& shader, float angle, GLint modelLoc) {
-	for (int i = 0; i < objects.size(); i ++) {
-		Object obj = objects[i];
+    for (int i = 0; i < objects.size(); i ++) {
+        Object obj = objects[i];
 
-		if (i == selectedObjectIndex || selectedObjectIndex == -1) {
-            if (rotateX) {
-                obj.model = glm::rotate(obj.model, angle, glm::vec3(1.0f, 0.0f, 0.0f));    
-            }
-            else if (rotateY) {    
-                obj.model = glm::rotate(obj.model, angle, glm::vec3(0.0f, 1.0f, 0.0f));
-            }
-            else if (rotateZ) {
-                obj.model = glm::rotate(obj.model, angle, glm::vec3(0.0f, 0.0f, 1.0f));
-            }
-			obj.model = glm::scale(obj.model, glm::vec3(scaleFactor, scaleFactor, scaleFactor));
-        }
+        obj.model = glm::mat4(1.0f);
 
-		if (i == 0) {
+        if (i == 0) {
             obj.model = glm::translate(obj.model, glm::vec3(-3.0f, 0.0f, 0.0f));
         } else if (i == 1) {
             obj.model = glm::translate(obj.model, glm::vec3(3.0f, 0.0f, 0.0f));
         }
 
-		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(obj.model));
 
-		glm::mat4 view = glm::lookAt(cameraPos,cameraPos + cameraFront,cameraUp);
-		glUniformMatrix4fv(glGetUniformLocation(shader.ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
-		
-		//Propriedades da câmera
-		shader.setVec3("cameraPos",cameraPos.x, cameraPos.y, cameraPos.z);
+		if (i == selectedObjectIndex || selectedObjectIndex == -1) {
+			obj.model = glm::translate(obj.model, objectPosition);
 
-		// Chamada de desenho - drawcall
-		// Poligono Preenchido - GL_TRIANGLES
-		glBindVertexArray(obj.VAO);
-		glDrawArrays(GL_TRIANGLES, 0, obj.nVertices);
-	}
+			if (rotateX) {
+				obj.model = glm::rotate(obj.model, angle, glm::vec3(1.0f, 0.0f, 0.0f));    
+			} else if (rotateY) {    
+				obj.model = glm::rotate(obj.model, angle, glm::vec3(0.0f, 1.0f, 0.0f));
+			} else if (rotateZ) {
+				obj.model = glm::rotate(obj.model, angle, glm::vec3(0.0f, 0.0f, 1.0f));
+			}
+
+			obj.model = glm::scale(obj.model, glm::vec3(scaleFactor, scaleFactor, scaleFactor));
+		}
+
+        // Atualizar a matriz de modelo no shader
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(obj.model));
+
+        // Atualizar a matriz de visão no shader
+        glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
+        glUniformMatrix4fv(glGetUniformLocation(shader.ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
+
+        // Propriedades da câmera
+        shader.setVec3("cameraPos", cameraPos.x, cameraPos.y, cameraPos.z);
+
+        // Chamada de desenho - drawcall
+        // Poligono Preenchido - GL_TRIANGLES
+        glBindVertexArray(obj.VAO);
+        glDrawArrays(GL_TRIANGLES, 0, obj.nVertices);
+    }
 }
 
 // Função de callback de teclado - só pode ter uma instância (deve ser estática se
@@ -253,6 +262,18 @@ void userKeyInput(GLFWwindow* window)
 		cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
 	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
 		cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
+
+	// Movimenta o objeto selecionado com as setas do teclado
+    float movementSpeed = 0.005f; // Velocidade de movimentação
+
+    if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
+        objectPosition.y += movementSpeed; // Move para cima	
+    if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
+        objectPosition.y -= movementSpeed; // Move para baixo
+    if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
+        objectPosition.x -= movementSpeed; // Move para a esquerda
+    if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
+        objectPosition.x += movementSpeed; // Move para a direita
 }
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
