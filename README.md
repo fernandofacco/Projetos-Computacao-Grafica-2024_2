@@ -12,3 +12,5 @@ Para configurar os projetos em sua máquina utilizando o VSCode ou o Visual Stud
 
 - [Visual Studio Code](https://github.com/fellowsheep/CG2024-2/blob/main/CONFIG-VSCode.md)
 - [Visual Studio](https://github.com/fellowsheep/CG2024-2/blob/main/CONFIG-VS2022%2B.md)
+
+![Animação](https://github.com/user-attachments/assets/c1377294-81cc-42e9-a81e-70c7a9ba29bf)
