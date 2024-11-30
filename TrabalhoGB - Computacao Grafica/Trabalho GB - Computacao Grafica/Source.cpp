@@ -37,6 +37,13 @@ void mouse_callback(GLFWwindow* window, double xposIn, double yposIn);
 
 void userKeyInput(GLFWwindow* window);
 
+struct Curve
+{
+    std::vector<glm::vec3> controlPoints; // Pontos de controle da curva
+    std::vector<glm::vec3> curvePoints;   // Pontos da curva
+    glm::mat4 M;                          // Matriz dos coeficientes da curva
+};
+
 struct Object
 {
 	GLuint VAO; //Índice do buffer de geometria
@@ -44,28 +51,34 @@ struct Object
 	int nVertices; //nro de vértices
 	glm::mat4 model; //matriz de transformações do objeto
 	float ka, kd, ks; //coeficientes de iluminação - material do objeto
-
-};
-
-struct Material {
-    glm::vec3 ka; // Coeficiente de reflexão ambiental
-    glm::vec3 kd; // Coeficiente de reflexão difusa
-    glm::vec3 ks; // Coeficiente de reflexão especular
-    float ns; // Exponentes de brilho (shininess)
-    GLuint textureID; // ID da textura
+	glm::vec3 position;
+	float scaleFactor;
+	int rotateX = 0;
+	int rotateY = 0;
+	int rotateZ = 0;
+	Curve curve;
+	bool isCurve = false;
+	int curveIndex = 0;
+	float curveLastTime = 0.0;
+	float curveFPS = 60.0;
+	float curveAngle = 0.0;
 };
 
 // Protótipos das funções
 int setupGeometry();
 int loadSimpleOBJ(string filePATH, int &nVertices);
 GLuint loadTexture(string filePath, int &width, int &height);
-void renderObjects(const std::vector<Object>& objects, Shader& shader, float angle, GLint modelLoc);
-void loadObjectsFromFolder(const std::string& objFolderPath, const std::string& textureFolderPath);
+void loadMTL(string filePATH, Object &obj);
+void renderObjects(Shader& shader, float angle, GLint modelLoc);
+void loadObjectsFromFolder(const std::string& objFolderPath, const std::string& textureFolderPath, const std::string& mtlFolderPath, Curve& curve);
+void initializeBernsteinMatrix(glm::mat4x4 &matrix);
+void generateBezierCurvePoints(Curve &curve, int numPoints);
+GLuint generateControlPointsBuffer(vector<glm::vec3> controlPoints);
+std::vector<glm::vec3> generateInfinityControlPoints(int numPoints = 20);
+void generateGlobalBezierCurvePoints(Curve &curve, int numPoints);  
 
 // Dimensões da janela (pode ser alterado em tempo de execução)
 const GLuint WIDTH = 1920, HEIGHT = 1080;
-
-bool rotateX=false, rotateY=false, rotateZ=false;
 
 //Variáveis globais da câmera
 glm::vec3 cameraPos = glm::vec3(0.0f,0.0f,3.0f);
@@ -82,7 +95,7 @@ bool cursorEnabled = false;
 
 std::vector<Object> objects;
 
-int selectedObjectIndex = -1;
+int selectedObjectIndex = -10;
 
 float scaleFactor = 1.0f; // Variável de escala
 
@@ -129,10 +142,31 @@ int main()
 
 	std::string objFolderPath = "./obj/";
 	std::string textureFolderPath = "./texture/";
+	std::string mtlFolderPath = "./mtl/";
 
-    // Carrega todos os objetos da pasta
-    loadObjectsFromFolder(objFolderPath, textureFolderPath);
+	// Estrutura para armazenar a curva de Bézier e pontos de controle
+    Curve curvaBezier;
+
+    std::vector<glm::vec3> controlPoints = generateInfinityControlPoints();
+
+    curvaBezier.controlPoints = controlPoints;
+
+    // Gerar pontos da curva de Bézier
+    int numCurvePoints = 100; // Quantidade de pontos por segmento na curva
+    generateGlobalBezierCurvePoints(curvaBezier, numCurvePoints);
+
+    // Cria os buffers de geometria dos pontos da curva
+    // GLuint VAOControl = generateControlPointsBuffer(curvaBezier.controlPoints);
+    // GLuint VAOBezierCurve = generateControlPointsBuffer(curvaBezier.curvePoints);
+
+    cout << curvaBezier.controlPoints.size() << endl;
+    cout << curvaBezier.curvePoints.size() << endl;
+
+	// Carrega todos os objetos da pasta
+    loadObjectsFromFolder(objFolderPath, textureFolderPath, mtlFolderPath, curvaBezier);
 	glUseProgram(shader.ID);
+
+	shader.Use();
 
 	//Matriz de modelo
 	glm::mat4 model = glm::mat4(1); //matriz identidade;
@@ -179,7 +213,7 @@ int main()
 
 		float angle = (GLfloat)glfwGetTime();
 
-		renderObjects(objects, shader, angle, modelLoc);
+		renderObjects(shader, angle, modelLoc);
 
 		// Troca os buffers da tela
 		glfwSwapBuffers(window);
@@ -196,32 +230,37 @@ int main()
 	return 0;
 }
 
-void renderObjects(const std::vector<Object>& objects, Shader& shader, float angle, GLint modelLoc) {
-    for (int i = 0; i < objects.size(); i ++) {
-        Object obj = objects[i];
-
+void renderObjects(Shader& shader, float angle, GLint modelLoc) {
+    for (Object& obj : objects) {
         obj.model = glm::mat4(1.0f);
+		
+		if (obj.isCurve){
+			obj.position = obj.curve.curvePoints[obj.curveIndex];
 
-        if (i == 0) {
-            obj.model = glm::translate(obj.model, glm::vec3(-3.0f, 0.0f, 0.0f));
-        } else if (i == 1) {
-            obj.model = glm::translate(obj.model, glm::vec3(3.0f, 0.0f, 0.0f));
-        }
+			// Incrementando o índice do frame apenas quando fechar a taxa de FPS desejada
+			auto now = glfwGetTime();
+			auto dt = now - obj.curveLastTime;
 
-
-		if (i == selectedObjectIndex || selectedObjectIndex == -1) {
-			obj.model = glm::translate(obj.model, objectPosition);
-
-			if (rotateX) {
-				obj.model = glm::rotate(obj.model, angle, glm::vec3(1.0f, 0.0f, 0.0f));    
-			} else if (rotateY) {    
-				obj.model = glm::rotate(obj.model, angle, glm::vec3(0.0f, 1.0f, 0.0f));
-			} else if (rotateZ) {
-				obj.model = glm::rotate(obj.model, angle, glm::vec3(0.0f, 0.0f, 1.0f));
+			if (dt >= 1 / obj.curveFPS)
+			{
+				obj.curveIndex = (obj.curveIndex + 1) % obj.curve.curvePoints.size(); // incrementando ciclicamente o indice do Frame
+				obj.curveLastTime = now;
+				glm::vec3 nextPos = obj.curve.curvePoints[obj.curveIndex];
+				glm::vec3 dir = glm::normalize(nextPos - obj.position);
+				obj.curveAngle = atan2(dir.y, dir.x) + glm::radians(-90.0f);
 			}
-
-			obj.model = glm::scale(obj.model, glm::vec3(scaleFactor, scaleFactor, scaleFactor));
 		}
+
+		obj.model = glm::translate(obj.model, obj.position);
+		obj.model = glm::scale(obj.model, glm::vec3(obj.scaleFactor, obj.scaleFactor, obj.scaleFactor));
+		
+		if (obj.rotateX != 0 || obj.rotateY != 0 || obj.rotateZ != 0){
+			obj.model = glm::rotate(obj.model, angle, glm::vec3(obj.rotateX, obj.rotateY, obj.rotateZ));
+		}
+
+		shader.setFloat("ka", obj.ka);
+		shader.setFloat("ks", obj.ks);
+		shader.setFloat("kd", obj.kd);
 
         // Atualizar a matriz de modelo no shader
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(obj.model));
@@ -251,30 +290,29 @@ void userKeyInput(GLFWwindow* window)
 
 	if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS)
 	{
-		rotateX = true;
-		rotateY = false;
-		rotateZ = false;
+		objects[selectedObjectIndex].rotateX = 1;
 	}
 
 	if (glfwGetKey(window, GLFW_KEY_Y) == GLFW_PRESS)
 	{
-		rotateX = false;
-		rotateY = true;
-		rotateZ = false;
+		objects[selectedObjectIndex].rotateY = 1;
 	}
 
 	if (glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS)
 	{
-		rotateX = false;
-		rotateY = false;
-		rotateZ = true;
+		objects[selectedObjectIndex].rotateZ = 1;
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS)
+	{
+		objects[selectedObjectIndex].rotateX = 0;
+		objects[selectedObjectIndex].rotateY = 0;
+		objects[selectedObjectIndex].rotateZ = 0;
 	}
 
 	if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS)
 	{
-		rotateX = false;
-		rotateY = false;
-		rotateZ = false;
+		objects[selectedObjectIndex].isCurve = !objects[selectedObjectIndex].isCurve;
 	}
 
 	//Verifica a movimentação da câmera
@@ -293,13 +331,17 @@ void userKeyInput(GLFWwindow* window)
     float movementSpeed = 0.005f; // Velocidade de movimentação
 
     if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
-        objectPosition.y += movementSpeed; // Move para cima	
+		objects[selectedObjectIndex].position.y += movementSpeed; // Move para cima	
+        // objectPosition.y += movementSpeed;
     if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
-        objectPosition.y -= movementSpeed; // Move para baixo
+		objects[selectedObjectIndex].position.y -= movementSpeed; // Move para baixo
+        //objectPosition.y -= movementSpeed;
     if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
-        objectPosition.x -= movementSpeed; // Move para a esquerda
+		objects[selectedObjectIndex].position.x -= movementSpeed; // Move para a esquerda
+        //objectPosition.x -= movementSpeed;
     if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
-        objectPosition.x += movementSpeed; // Move para a direita
+		objects[selectedObjectIndex].position.x += movementSpeed; // Move para a direita
+        //objectPosition.x += movementSpeed;
 }
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -331,10 +373,15 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
     }
 
 	if (key == GLFW_KEY_KP_ADD || key == GLFW_KEY_EQUAL) {
-        scaleFactor += 0.1f;
+		objects[selectedObjectIndex].scaleFactor += 0.1f;
+        //scaleFactor += 0.1f;
     } else if (key == GLFW_KEY_KP_SUBTRACT || key == GLFW_KEY_MINUS) {
-        scaleFactor -= 0.1f;
-        if (scaleFactor < 0.1f) scaleFactor = 0.1f; // Previne escala negativa ou zero
+        objects[selectedObjectIndex].scaleFactor -= 0.1f;
+		//scaleFactor -= 0.1f;
+        if (scaleFactor < 0.1f) {
+			objects[selectedObjectIndex].scaleFactor = 0.1f; // Previne escala negativa ou zero
+			//scaleFactor = 0.1f;
+		}
     }
 }
 
@@ -461,27 +508,54 @@ int setupGeometry()
 	return VAO;
 }
 
-void loadObjectsFromFolder(const std::string& objFolderPath, const std::string& textureFolderPath) {    
+void loadObjectsFromFolder(const std::string& objFolderPath, const std::string& textureFolderPath, const std::string& mtlFolderPath, Curve& curve) {    
     for (const auto& entry : std::filesystem::directory_iterator(objFolderPath)) {
         if (entry.path().extension() == ".obj") {
             // Cria um novo objeto para cada arquivo .obj
             Object obj;
             obj.VAO = loadSimpleOBJ(entry.path().string(), obj.nVertices);
 			obj.model = glm::mat4(1); //matriz identidade 
+			obj.scaleFactor = 1.0f; // Escala inicial do objeto para exibir
+
+			// Curva e angulo da curva
+			obj.curve = curve;
+			glm::vec3 nextPos = obj.curve.curvePoints[1];
+			glm::vec3 dir = glm::normalize(nextPos - obj.position);
+			obj.curveAngle = atan2(dir.y, dir.x) + glm::radians(-90.0f);
 
 			// Nome do arquivo base (sem extensão)
             std::string baseName = entry.path().stem().string();
 
 			// Busca o arquivo de textura correspondente
-            std::string texturePath = textureFolderPath + "/" + baseName + ".jpeg"; // Ajuste a extensão conforme necessário
+            std::string texturePathJpeg = textureFolderPath + "/" + baseName + ".jpeg";
+			std::string texturePathJpg = textureFolderPath + "/" + baseName + ".jpg";
+			std::string texturePathPng = textureFolderPath + "/" + baseName + ".png";
+			std::string texturePath = "";
 
-            if (std::filesystem::exists(texturePath)) {
+            if (std::filesystem::exists(texturePathJpeg)) {
+				texturePath = texturePathJpeg;
+            } else if (std::filesystem::exists(texturePathJpg)){
+				texturePath = texturePathJpg;
+            } else if (std::filesystem::exists(texturePathPng)){
+				texturePath = texturePathPng;
+            }
+
+			if (std::filesystem::exists(texturePath)) {
                 int texWidth, texHeight;
                 obj.texID = loadTexture(texturePath, texWidth, texHeight);
                 std::cout << "Textura carregada para " << entry.path().filename() << ": " << texturePath << std::endl;
             } else {
                 std::cerr << "Textura não encontrada para " << entry.path().filename() << std::endl;
                 obj.texID = 0; // Identificador inválido para textura
+            }
+
+			// Busca o arquivo mtl correspondente
+            std::string mtlPath = mtlFolderPath + "/" + baseName + ".mtl";
+
+            if (std::filesystem::exists(mtlPath)) {
+				loadMTL(mtlPath, obj);
+            } else {
+                std::cerr << "Arquivo MTL não encontrado para " << entry.path().filename() << std::endl;
             }
 			
             // Adiciona o objeto ao vetor
@@ -689,4 +763,181 @@ GLuint loadTexture(string filePath, int &width, int &height)
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	return texID;
+}
+
+void loadMTL(string filePath, Object &obj)
+{
+	ifstream arqEntrada;
+
+	arqEntrada.open(filePath.c_str());
+	if (arqEntrada.is_open())
+	{
+		//Fazer o parsing
+		string line;
+		while (!arqEntrada.eof())
+		{
+			getline(arqEntrada,line);
+			istringstream ssline(line);
+			string word;
+			ssline >> word;
+			if (word == "Kd")
+			{
+				glm::vec3 kValue;
+				ssline >> kValue.x >> kValue.y >> kValue.z;
+				obj.kd = (kValue.x + kValue.y + kValue.z) / 3.0f;
+
+			}
+			if (word == "Ka")
+			{
+				glm::vec3 kValue;
+				ssline >> kValue.x >> kValue.y >> kValue.z;
+				obj.ka = (kValue.x + kValue.y + kValue.z) / 3.0f;
+
+			}
+			if (word == "Ks")
+			{
+				glm::vec3 kValue;
+				ssline >> kValue.x >> kValue.y >> kValue.z;
+				obj.ks = (kValue.x + kValue.y + kValue.z) / 3.0f;
+			}
+		}
+
+		arqEntrada.close();
+
+		cout << "Arquivo .mtl lido" << endl;
+	}
+}
+
+void initializeBernsteinMatrix(glm::mat4 &matrix)
+{
+    matrix[0] = glm::vec4(-1.0f, 3.0f, -3.0f, 1.0f); // Primeira coluna
+    matrix[1] = glm::vec4(3.0f, -6.0f, 3.0f, 0.0f);  // Segunda coluna
+    matrix[2] = glm::vec4(-3.0f, 3.0f, 0.0f, 0.0f);  // Terceira coluna
+    matrix[3] = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);   // Quarta coluna
+}
+
+void generateBezierCurvePoints(Curve &curve, int numPoints)
+{
+    curve.curvePoints.clear(); // Limpa quaisquer pontos antigos da curva
+
+    initializeBernsteinMatrix(curve.M);
+    // Calcular os pontos ao longo da curva com base em Bernstein
+    // Loop sobre os pontos de controle em grupos de 4
+
+    float piece = 1.0 / (float)numPoints;
+    float t;
+    for (int i = 0; i < curve.controlPoints.size() - 3; i += 3)
+    {
+
+        // Gera pontos para o segmento atual
+        for (int j = 0; j < numPoints; j++)
+        {
+            t = j * piece;
+
+            // Vetor t para o polinômio de Bernstein
+            glm::vec4 T(t * t * t, t * t, t, 1);
+
+            glm::vec3 P0 = curve.controlPoints[i];
+            glm::vec3 P1 = curve.controlPoints[i + 1];
+            glm::vec3 P2 = curve.controlPoints[i + 2];
+            glm::vec3 P3 = curve.controlPoints[i + 3];
+
+            glm::mat4x3 G(P0, P1, P2, P3);
+
+            // Calcula o ponto da curva multiplicando tVector, a matriz de Bernstein e os pontos de controle
+            glm::vec3 point = G * curve.M * T;
+
+            curve.curvePoints.push_back(point);
+        }
+    }
+}
+
+GLuint generateControlPointsBuffer(vector<glm::vec3> controlPoints)
+{
+    GLuint VBO, VAO;
+
+    // Geração do identificador do VBO
+    glGenBuffers(1, &VBO);
+
+    // Faz a conexão (vincula) do buffer como um buffer de array
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    // Envia os dados do array de floats para o buffer da OpenGl
+    glBufferData(GL_ARRAY_BUFFER, controlPoints.size() * sizeof(GLfloat) * 3, controlPoints.data(), GL_STATIC_DRAW);
+
+    // Geração do identificador do VAO (Vertex Array Object)
+    glGenVertexArrays(1, &VAO);
+
+    // Vincula (bind) o VAO primeiro, e em seguida  conecta e seta o(s) buffer(s) de vértices
+    // e os ponteiros para os atributos
+    glBindVertexArray(VAO);
+
+    // Atributo posição (x, y, z)
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), (GLvoid *)0);
+    glEnableVertexAttribArray(0);
+
+    // Observe que isso é permitido, a chamada para glVertexAttribPointer registrou o VBO como o objeto de buffer de vértice
+    // atualmente vinculado - para que depois possamos desvincular com segurança
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    // Desvincula o VAO (é uma boa prática desvincular qualquer buffer ou array para evitar bugs medonhos)
+    glBindVertexArray(0);
+
+    return VAO;
+}
+
+std::vector<glm::vec3> generateInfinityControlPoints(int numPoints)
+{
+    std::vector<glm::vec3> controlPoints;
+
+    // Intervalo de t: de 0 a 2 * PI
+    float step = 2 * 3.14159 / (numPoints - 1);
+
+    for (int i = 0; i < numPoints; i++)
+    {
+        float t = i * step;
+
+        // Fórmulas paramétricas para a lemniscata de Bernoulli
+        float width = 2.5;
+        float height = 2.5; 
+        float denom = 1 + pow(sin(t), 2);
+        float x = (width * cos(t)) / denom;
+        float y = (height * width * sin(t) * cos(t)) / denom;
+
+        // Adiciona o ponto ao vetor
+        controlPoints.push_back(glm::vec3(x, y, 0.0f));
+    }
+
+    // Fecha o laço conectando o último ponto ao primeiro
+    controlPoints.push_back(controlPoints[0]);
+
+    return controlPoints;
+}
+
+void generateGlobalBezierCurvePoints(Curve &curve, int numPoints)
+{
+    curve.curvePoints.clear(); // Limpa quaisquer pontos antigos da curva
+
+    int n = curve.controlPoints.size() - 1; // Grau da curva
+    float t;
+    float piece = 1.0f / (float)numPoints;
+
+    for (int j = 0; j <= numPoints; ++j)
+    {
+        t = j * piece;
+        glm::vec3 point(0.0f); // Ponto na curva
+
+        // Calcula o ponto da curva usando a fórmula de Bernstein
+        for (int i = 0; i <= n; ++i)
+        {
+            // Coeficiente binomial
+            float binomialCoeff = (float)(tgamma(n + 1) / (tgamma(i + 1) * tgamma(n - i + 1)));
+            // Polinômio de Bernstein
+            float bernsteinPoly = binomialCoeff * pow(1 - t, n - i) * pow(t, i);
+            // Soma ponderada dos pontos de controle
+            point += bernsteinPoly * curve.controlPoints[i];
+        }
+
+        curve.curvePoints.push_back(point);
+    }
 }
