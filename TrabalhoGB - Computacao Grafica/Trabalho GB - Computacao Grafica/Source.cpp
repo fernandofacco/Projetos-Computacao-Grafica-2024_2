@@ -30,12 +30,8 @@ using namespace std;
 //Classe gerenciadora de shaders
 #include "Shader.h"
 
-// Protótipo da função de callback de teclado
-void key_callback(GLFWwindow* window, int key, int scancode, int action, int mode);
-
-void mouse_callback(GLFWwindow* window, double xposIn, double yposIn);
-
-void userKeyInput(GLFWwindow* window);
+// Biblioteca JSON
+#include "json.hpp"
 
 struct Curve
 {
@@ -52,38 +48,44 @@ struct Object
 	glm::mat4 model; //matriz de transformações do objeto
 	float ka, kd, ks; //coeficientes de iluminação - material do objeto
 	glm::vec3 position;
-	float scaleFactor;
-	int rotateX = 0;
-	int rotateY = 0;
-	int rotateZ = 0;
+	glm::vec3 scale;
+	glm::vec3 rotation;
 	Curve curve;
-	bool isCurve = false;
 	int curveIndex = 0;
 	float curveLastTime = 0.0;
 	float curveFPS = 60.0;
 	float curveAngle = 0.0;
 };
 
+// Protótipo da função de callback de teclado
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mode);
+
+void mouse_callback(GLFWwindow* window, double xposIn, double yposIn);
+
+void userKeyInput(GLFWwindow* window);
+
 // Protótipos das funções
-int setupGeometry();
 int loadSimpleOBJ(string filePATH, int &nVertices);
-GLuint loadTexture(string filePath, int &width, int &height);
+GLuint loadTexture(string filePATH, int &width, int &height);
 void loadMTL(string filePATH, Object &obj);
 void renderObjects(Shader& shader, float angle, GLint modelLoc);
-void loadObjectsFromFolder(const std::string& objFolderPath, const std::string& textureFolderPath, const std::string& mtlFolderPath, Curve& curve);
-void initializeBernsteinMatrix(glm::mat4x4 &matrix);
-void generateBezierCurvePoints(Curve &curve, int numPoints);
-GLuint generateControlPointsBuffer(vector<glm::vec3> controlPoints);
+void loadSceneConfig(string filePATH);
+void loadObjectsFromFolder(string objFolderPath, string textureFolderPath, string mtlFolderPath, Curve& curve);
+
 std::vector<glm::vec3> generateInfinityControlPoints(int numPoints = 20);
+std::vector<glm::vec3> generateCircleControlPoints(int numPoints = 20);
 void generateGlobalBezierCurvePoints(Curve &curve, int numPoints);  
 
 // Dimensões da janela (pode ser alterado em tempo de execução)
 const GLuint WIDTH = 1920, HEIGHT = 1080;
 
 //Variáveis globais da câmera
-glm::vec3 cameraPos = glm::vec3(0.0f,0.0f,3.0f);
-glm::vec3 cameraFront = glm::vec3(0.0f,0.0,-1.0f);
-glm::vec3 cameraUp = glm::vec3(0.0f,1.0f,0.0f);
+glm::vec3 cameraPos;
+glm::vec3 cameraFront;
+glm::vec3 cameraUp;
+
+glm::vec3 lightPos;
+glm::vec3 lightColor;
 
 bool firstMouse = true;
 float yawVariable = -90.0f;
@@ -95,11 +97,7 @@ bool cursorEnabled = false;
 
 std::vector<Object> objects;
 
-int selectedObjectIndex = -10;
-
-float scaleFactor = 1.0f; // Variável de escala
-
-glm::vec3 objectPosition(0.0f, 0.0f, 0.0f); // Inicialmente no centro
+int selectedObjectIndex = -1;
 
 // Função MAIN
 int main()
@@ -140,33 +138,18 @@ int main()
 	// Compilando e buildando o programa de shader
 	Shader shader("phong.vs","phong.fs");
 
-	std::string objFolderPath = "./obj/";
-	std::string textureFolderPath = "./texture/";
-	std::string mtlFolderPath = "./mtl/";
-
 	// Estrutura para armazenar a curva de Bézier e pontos de controle
     Curve curvaBezier;
 
-    std::vector<glm::vec3> controlPoints = generateInfinityControlPoints();
-
-    curvaBezier.controlPoints = controlPoints;
+    curvaBezier.controlPoints = generateInfinityControlPoints();
 
     // Gerar pontos da curva de Bézier
     int numCurvePoints = 100; // Quantidade de pontos por segmento na curva
     generateGlobalBezierCurvePoints(curvaBezier, numCurvePoints);
 
-    // Cria os buffers de geometria dos pontos da curva
-    // GLuint VAOControl = generateControlPointsBuffer(curvaBezier.controlPoints);
-    // GLuint VAOBezierCurve = generateControlPointsBuffer(curvaBezier.curvePoints);
-
-    cout << curvaBezier.controlPoints.size() << endl;
-    cout << curvaBezier.curvePoints.size() << endl;
-
-	// Carrega todos os objetos da pasta
-    loadObjectsFromFolder(objFolderPath, textureFolderPath, mtlFolderPath, curvaBezier);
+	std::string sceneJsonFilePath = "./sceneConfig.json";
+	loadSceneConfig(sceneJsonFilePath);
 	glUseProgram(shader.ID);
-
-	shader.Use();
 
 	//Matriz de modelo
 	glm::mat4 model = glm::mat4(1); //matriz identidade;
@@ -177,8 +160,8 @@ int main()
 	//Matriz de view
 	glm::mat4 view = glm::lookAt(cameraPos,glm::vec3(0.0f,0.0f,0.0f),cameraUp);
 	glUniformMatrix4fv(glGetUniformLocation(shader.ID, "view"), 1, GL_FALSE, glm::value_ptr(view));
+
 	//Matriz de projeção
-	//glm::mat4 projection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, -1.0f, 1.0f);
 	glm::mat4 projection = glm::perspective(glm::radians(39.6f),(float)WIDTH/HEIGHT,0.1f,100.0f);
 	glUniformMatrix4fv(glGetUniformLocation(shader.ID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
 
@@ -195,8 +178,8 @@ int main()
 	shader.setFloat("q", 10.0);
 
 	//Propriedades da fonte de luz
-	shader.setVec3("lightPos", 50.0f, 10.0f, 50.0f);
-	shader.setVec3("lightColor", 1.0, 1.0, 1.0);  // Aumentar a intensidade
+	shader.setVec3("lightPos", lightPos.x, lightPos.y, lightPos.z);
+	shader.setVec3("lightColor", lightColor.r, lightColor.g, lightColor.b);  // Aumentar a intensidade
 
 	// Loop da aplicação - "game loop"
 	while (!glfwWindowShouldClose(window))
@@ -234,7 +217,7 @@ void renderObjects(Shader& shader, float angle, GLint modelLoc) {
     for (Object& obj : objects) {
         obj.model = glm::mat4(1.0f);
 		
-		if (obj.isCurve){
+		if (!obj.curve.curvePoints.empty()){
 			obj.position = obj.curve.curvePoints[obj.curveIndex];
 
 			// Incrementando o índice do frame apenas quando fechar a taxa de FPS desejada
@@ -252,10 +235,10 @@ void renderObjects(Shader& shader, float angle, GLint modelLoc) {
 		}
 
 		obj.model = glm::translate(obj.model, obj.position);
-		obj.model = glm::scale(obj.model, glm::vec3(obj.scaleFactor, obj.scaleFactor, obj.scaleFactor));
+		obj.model = glm::scale(obj.model, glm::vec3(obj.scale[0], obj.scale[1], obj.scale[2]));
 		
-		if (obj.rotateX != 0 || obj.rotateY != 0 || obj.rotateZ != 0){
-			obj.model = glm::rotate(obj.model, angle, glm::vec3(obj.rotateX, obj.rotateY, obj.rotateZ));
+		if (obj.rotation.x != 0 || obj.rotation.y != 0 || obj.rotation.z != 0){ // x y z
+			obj.model = glm::rotate(obj.model, angle, glm::vec3(obj.rotation.x, obj.rotation.y, obj.rotation.z));
 		}
 
 		shader.setFloat("ka", obj.ka);
@@ -290,30 +273,30 @@ void userKeyInput(GLFWwindow* window)
 
 	if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS)
 	{
-		objects[selectedObjectIndex].rotateX = 1;
+		objects[selectedObjectIndex].rotation.x = 1;
 	}
 
 	if (glfwGetKey(window, GLFW_KEY_Y) == GLFW_PRESS)
 	{
-		objects[selectedObjectIndex].rotateY = 1;
+		objects[selectedObjectIndex].rotation.y = 1;
 	}
 
 	if (glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS)
 	{
-		objects[selectedObjectIndex].rotateZ = 1;
+		objects[selectedObjectIndex].rotation.z = 1;
 	}
 
 	if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS)
 	{
-		objects[selectedObjectIndex].rotateX = 0;
-		objects[selectedObjectIndex].rotateY = 0;
-		objects[selectedObjectIndex].rotateZ = 0;
+		objects[selectedObjectIndex].rotation.x = 0;
+		objects[selectedObjectIndex].rotation.y = 0;
+		objects[selectedObjectIndex].rotation.z = 0;
 	}
 
-	if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS)
+	/*if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS)
 	{
 		objects[selectedObjectIndex].isCurve = !objects[selectedObjectIndex].isCurve;
-	}
+	}*/
 
 	//Verifica a movimentação da câmera
 	float cameraSpeed = 0.02f;
@@ -332,16 +315,12 @@ void userKeyInput(GLFWwindow* window)
 
     if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
 		objects[selectedObjectIndex].position.y += movementSpeed; // Move para cima	
-        // objectPosition.y += movementSpeed;
     if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
 		objects[selectedObjectIndex].position.y -= movementSpeed; // Move para baixo
-        //objectPosition.y -= movementSpeed;
     if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
 		objects[selectedObjectIndex].position.x -= movementSpeed; // Move para a esquerda
-        //objectPosition.x -= movementSpeed;
     if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
 		objects[selectedObjectIndex].position.x += movementSpeed; // Move para a direita
-        //objectPosition.x += movementSpeed;
 }
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -373,16 +352,21 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
     }
 
 	if (key == GLFW_KEY_KP_ADD || key == GLFW_KEY_EQUAL) {
-		objects[selectedObjectIndex].scaleFactor += 0.1f;
-        //scaleFactor += 0.1f;
-    } else if (key == GLFW_KEY_KP_SUBTRACT || key == GLFW_KEY_MINUS) {
-        objects[selectedObjectIndex].scaleFactor -= 0.1f;
-		//scaleFactor -= 0.1f;
-        if (scaleFactor < 0.1f) {
-			objects[selectedObjectIndex].scaleFactor = 0.1f; // Previne escala negativa ou zero
-			//scaleFactor = 0.1f;
+		objects[selectedObjectIndex].scale += 0.1f;
+	} else if (key == GLFW_KEY_KP_SUBTRACT || key == GLFW_KEY_MINUS) {
+		objects[selectedObjectIndex].scale -= 0.1f;
+
+		// Previne escala menor que 0.1 para todos os componentes do vetor
+		if (objects[selectedObjectIndex].scale.x < 0.1f) {
+			objects[selectedObjectIndex].scale.x = 0.1f;
 		}
-    }
+		if (objects[selectedObjectIndex].scale.y < 0.1f) {
+			objects[selectedObjectIndex].scale.y = 0.1f;
+		}
+		if (objects[selectedObjectIndex].scale.z < 0.1f) {
+			objects[selectedObjectIndex].scale.z = 0.1f;
+		}
+	}
 }
 
 void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
@@ -420,102 +404,138 @@ void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
     cameraFront = glm::normalize(front);
 }
 
-// Esta função está bastante harcoded - objetivo é criar os buffers que armazenam a 
-// geometria de um triângulo
-// Apenas atributo coordenada nos vértices
-// 1 VBO com as coordenadas, VAO com apenas 1 ponteiro para atributo
-// A função retorna o identificador do VAO
-int setupGeometry()
-{
-	// Aqui setamos as coordenadas x, y e z do triângulo e as armazenamos de forma
-	// sequencial, já visando mandar para o VBO (Vertex Buffer Objects)
-	// Cada atributo do vértice (coordenada, cores, coordenadas de textura, normal, etc)
-	// Pode ser arazenado em um VBO único ou em VBOs separados
-	GLfloat vertices[] = {
 
-		//Base da pirâmide: 2 triângulos
-		//x    y    z    r    g    b
-		-0.5, -0.5, -0.5, 1.0, 1.0, 0.0,
-		-0.5, -0.5,  0.5, 0.0, 1.0, 1.0,
-		 0.5, -0.5, -0.5, 1.0, 0.0, 1.0,
+void loadSceneConfig(string filePATH){
+    std::ifstream inputFile(filePATH);
+    if (!inputFile.is_open()) {
+        std::cerr << "Erro ao abrir o arquivo JSON: " << filePATH << std::endl;
+        return;
+    }
 
-		 -0.5, -0.5, 0.5, 1.0, 1.0, 0.0,
-		  0.5, -0.5,  0.5, 0.0, 1.0, 1.0,
-		  0.5, -0.5, -0.5, 1.0, 0.0, 1.0,
+    // Parse do JSON
+	nlohmann::json jsonSceneConfig;
+    inputFile >> jsonSceneConfig;
 
-		 //
-		 -0.5, -0.5, -0.5, 1.0, 1.0, 0.0,
-		  0.0,  0.5,  0.0, 1.0, 1.0, 0.0,
-		  0.5, -0.5, -0.5, 1.0, 1.0, 0.0,
+    // Carregar objetos
+    if (jsonSceneConfig.contains("objects")) {
+        for (const auto& objData : jsonSceneConfig["objects"]) {
+            std::string objFile = objData["objFile"];
+            std::string textureFile = objData["textureFile"];
+            std::string mtlFile = objData["mtlFile"];
+            
+            glm::vec3 position = glm::vec3(
+                objData["position"][0],
+                objData["position"][1],
+                objData["position"][2]
+            );
 
-		  -0.5, -0.5, -0.5, 1.0, 0.0, 1.0,
-		  0.0,  0.5,  0.0, 1.0, 0.0, 1.0,
-		  -0.5, -0.5, 0.5, 1.0, 0.0, 1.0,
+            glm::vec3 scale = glm::vec3(
+                objData["scale"][0],
+                objData["scale"][1],
+                objData["scale"][2]
+            );
 
-		   -0.5, -0.5, 0.5, 1.0, 1.0, 0.0,
-		  0.0,  0.5,  0.0, 1.0, 1.0, 0.0,
-		  0.5, -0.5, 0.5, 1.0, 1.0, 0.0,
+            glm::vec3 rotation = glm::vec3(
+                objData["rotation"][0],
+                objData["rotation"][1],
+                objData["rotation"][2]
+            );
 
-		   0.5, -0.5, 0.5, 0.0, 1.0, 1.0,
-		  0.0,  0.5,  0.0, 0.0, 1.0, 1.0,
-		  0.5, -0.5, -0.5, 0.0, 1.0, 1.0,
+            // Criar objeto e configurar propriedades
+			Object obj;
+			obj.VAO = loadSimpleOBJ(objFile, obj.nVertices);
+			obj.model = glm::mat4(1); //matriz identidade 
+			obj.position = position;
+			obj.scale = scale;
+			obj.rotation = rotation;
 
+            if (objData.contains("curveAnimation") && (objData["curveAnimation"] == "infinity" || objData["curveAnimation"] == "circle")) {
+				Curve curvaBezier;
 
-	};
+                if (objData["curveAnimation"] == "infinity"){
+					curvaBezier.controlPoints = generateInfinityControlPoints();
+				} else if (objData["curveAnimation"] == "circle"){
+					curvaBezier.controlPoints = generateCircleControlPoints();
+				}
 
-	GLuint VBO, VAO;
+				// Gerar pontos da curva de Bézier
+				int numCurvePoints = 100; // Quantidade de pontos por segmento na curva
+				generateGlobalBezierCurvePoints(curvaBezier, numCurvePoints);
 
-	//Geração do identificador do VBO
-	glGenBuffers(1, &VBO);
-
-	//Faz a conexão (vincula) do buffer como um buffer de array
-	glBindBuffer(GL_ARRAY_BUFFER, VBO);
-
-	//Envia os dados do array de floats para o buffer da OpenGl
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-	//Geração do identificador do VAO (Vertex Array Object)
-	glGenVertexArrays(1, &VAO);
-
-	// Vincula (bind) o VAO primeiro, e em seguida  conecta e seta o(s) buffer(s) de vértices
-	// e os ponteiros para os atributos 
-	glBindVertexArray(VAO);
-	
-	//Para cada atributo do vertice, criamos um "AttribPointer" (ponteiro para o atributo), indicando: 
-	// Localização no shader * (a localização dos atributos devem ser correspondentes no layout especificado no vertex shader)
-	// Numero de valores que o atributo tem (por ex, 3 coordenadas xyz) 
-	// Tipo do dado
-	// Se está normalizado (entre zero e um)
-	// Tamanho em bytes 
-	// Deslocamento a partir do byte zero 
-	
-	//Atributo posição (x, y, z)
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), (GLvoid*)0);
-	glEnableVertexAttribArray(0);
-
-	//Atributo cor (r, g, b)
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), (GLvoid*)(3*sizeof(GLfloat)));
-	glEnableVertexAttribArray(1);
+				obj.curve = curvaBezier;
+				glm::vec3 nextPos = obj.curve.curvePoints[1];
+				glm::vec3 dir = glm::normalize(nextPos - obj.position);
+				obj.curveAngle = atan2(dir.y, dir.x) + glm::radians(-90.0f);
+            }
 
 
-	// Observe que isso é permitido, a chamada para glVertexAttribPointer registrou o VBO como o objeto de buffer de vértice 
-	// atualmente vinculado - para que depois possamos desvincular com segurança
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
+			if (std::filesystem::exists(textureFile)) {
+                int texWidth, texHeight;
+                obj.texID = loadTexture(textureFile, texWidth, texHeight);
+                std::cout << "Textura carregada para " << objFile << ": " << textureFile << std::endl;
+            } else {
+                std::cerr << "Textura não encontrada para " << objFile << std::endl;
+                obj.texID = 0; // Identificador inválido para textura
+            }
 
-	// Desvincula o VAO (é uma boa prática desvincular qualquer buffer ou array para evitar bugs medonhos)
-	glBindVertexArray(0);
+            if (std::filesystem::exists(mtlFile)) {
+				loadMTL(mtlFile, obj);
+            } else {
+                std::cerr << "Arquivo MTL não encontrado para " << objFile << std::endl;
+            }
+			
+            // Adiciona o objeto ao vetor
+            objects.push_back(obj);
+        }
+    }
 
-	return VAO;
+    // Configurar luz
+    if (jsonSceneConfig.contains("light")) {
+        lightPos = glm::vec3(
+            jsonSceneConfig["light"]["lightPos"][0],
+            jsonSceneConfig["light"]["lightPos"][1],
+            jsonSceneConfig["light"]["lightPos"][2]
+        );
+
+        lightColor = glm::vec3(
+            jsonSceneConfig["light"]["lightColor"][0],
+            jsonSceneConfig["light"]["lightColor"][1],
+            jsonSceneConfig["light"]["lightColor"][2]
+        );
+    }
+
+    // Configurar câmera
+    if (jsonSceneConfig.contains("camera")) {
+        cameraPos = glm::vec3(
+            jsonSceneConfig["camera"]["cameraPos"][0],
+            jsonSceneConfig["camera"]["cameraPos"][1],
+            jsonSceneConfig["camera"]["cameraPos"][2]
+        );
+
+        cameraFront = glm::vec3(
+            jsonSceneConfig["camera"]["cameraFront"][0],
+            jsonSceneConfig["camera"]["cameraFront"][1],
+            jsonSceneConfig["camera"]["cameraFront"][2]
+        );
+
+        cameraUp = glm::vec3(
+            jsonSceneConfig["camera"]["cameraUp"][0],
+            jsonSceneConfig["camera"]["cameraUp"][1],
+            jsonSceneConfig["camera"]["cameraUp"][2]
+        );
+    }
+
+    std::cout << "Cena carregada com sucesso a partir de " << filePATH << std::endl;
 }
 
-void loadObjectsFromFolder(const std::string& objFolderPath, const std::string& textureFolderPath, const std::string& mtlFolderPath, Curve& curve) {    
+void loadObjectsFromFolder(string objFolderPath, string textureFolderPath, string mtlFolderPath, Curve& curve) {    
     for (const auto& entry : std::filesystem::directory_iterator(objFolderPath)) {
         if (entry.path().extension() == ".obj") {
             // Cria um novo objeto para cada arquivo .obj
             Object obj;
             obj.VAO = loadSimpleOBJ(entry.path().string(), obj.nVertices);
 			obj.model = glm::mat4(1); //matriz identidade 
-			obj.scaleFactor = 1.0f; // Escala inicial do objeto para exibir
+			//obj.scale = 1.0f; // Escala inicial do objeto para exibir
 
 			// Curva e angulo da curva
 			obj.curve = curve;
@@ -808,84 +828,6 @@ void loadMTL(string filePath, Object &obj)
 	}
 }
 
-void initializeBernsteinMatrix(glm::mat4 &matrix)
-{
-    matrix[0] = glm::vec4(-1.0f, 3.0f, -3.0f, 1.0f); // Primeira coluna
-    matrix[1] = glm::vec4(3.0f, -6.0f, 3.0f, 0.0f);  // Segunda coluna
-    matrix[2] = glm::vec4(-3.0f, 3.0f, 0.0f, 0.0f);  // Terceira coluna
-    matrix[3] = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);   // Quarta coluna
-}
-
-void generateBezierCurvePoints(Curve &curve, int numPoints)
-{
-    curve.curvePoints.clear(); // Limpa quaisquer pontos antigos da curva
-
-    initializeBernsteinMatrix(curve.M);
-    // Calcular os pontos ao longo da curva com base em Bernstein
-    // Loop sobre os pontos de controle em grupos de 4
-
-    float piece = 1.0 / (float)numPoints;
-    float t;
-    for (int i = 0; i < curve.controlPoints.size() - 3; i += 3)
-    {
-
-        // Gera pontos para o segmento atual
-        for (int j = 0; j < numPoints; j++)
-        {
-            t = j * piece;
-
-            // Vetor t para o polinômio de Bernstein
-            glm::vec4 T(t * t * t, t * t, t, 1);
-
-            glm::vec3 P0 = curve.controlPoints[i];
-            glm::vec3 P1 = curve.controlPoints[i + 1];
-            glm::vec3 P2 = curve.controlPoints[i + 2];
-            glm::vec3 P3 = curve.controlPoints[i + 3];
-
-            glm::mat4x3 G(P0, P1, P2, P3);
-
-            // Calcula o ponto da curva multiplicando tVector, a matriz de Bernstein e os pontos de controle
-            glm::vec3 point = G * curve.M * T;
-
-            curve.curvePoints.push_back(point);
-        }
-    }
-}
-
-GLuint generateControlPointsBuffer(vector<glm::vec3> controlPoints)
-{
-    GLuint VBO, VAO;
-
-    // Geração do identificador do VBO
-    glGenBuffers(1, &VBO);
-
-    // Faz a conexão (vincula) do buffer como um buffer de array
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-
-    // Envia os dados do array de floats para o buffer da OpenGl
-    glBufferData(GL_ARRAY_BUFFER, controlPoints.size() * sizeof(GLfloat) * 3, controlPoints.data(), GL_STATIC_DRAW);
-
-    // Geração do identificador do VAO (Vertex Array Object)
-    glGenVertexArrays(1, &VAO);
-
-    // Vincula (bind) o VAO primeiro, e em seguida  conecta e seta o(s) buffer(s) de vértices
-    // e os ponteiros para os atributos
-    glBindVertexArray(VAO);
-
-    // Atributo posição (x, y, z)
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), (GLvoid *)0);
-    glEnableVertexAttribArray(0);
-
-    // Observe que isso é permitido, a chamada para glVertexAttribPointer registrou o VBO como o objeto de buffer de vértice
-    // atualmente vinculado - para que depois possamos desvincular com segurança
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-    // Desvincula o VAO (é uma boa prática desvincular qualquer buffer ou array para evitar bugs medonhos)
-    glBindVertexArray(0);
-
-    return VAO;
-}
-
 std::vector<glm::vec3> generateInfinityControlPoints(int numPoints)
 {
     std::vector<glm::vec3> controlPoints;
@@ -909,6 +851,29 @@ std::vector<glm::vec3> generateInfinityControlPoints(int numPoints)
     }
 
     // Fecha o laço conectando o último ponto ao primeiro
+    controlPoints.push_back(controlPoints[0]);
+
+    return controlPoints;
+}
+
+std::vector<glm::vec3> generateCircleControlPoints(int numPoints)
+{
+    std::vector<glm::vec3> controlPoints;
+
+	float radius = 4.0f;
+
+    // Intervalo de t: de 0 a 2 * PI
+    float step = 2 * 3.14159f / numPoints;
+
+    for (int i = 0; i < numPoints; i++)
+    {
+        float t = i * step;
+
+        float x = radius * cos(t);
+        float y = radius * sin(t);
+
+        controlPoints.push_back(glm::vec3(x, y, 0.0f));
+    }
     controlPoints.push_back(controlPoints[0]);
 
     return controlPoints;

@@ -10,7 +10,6 @@
                 "${workspaceFolder}/../Common/include",
                 "${workspaceFolder}/../Dependencies/glm",
                 "${workspaceFolder}/../Dependencies/stb_image"
-
             ],
             "defines": [
                 "_DEBUG",
