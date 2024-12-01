@@ -235,9 +235,9 @@ void renderObjects(Shader& shader, float angle, GLint modelLoc) {
 		}
 
 		obj.model = glm::translate(obj.model, obj.position);
-		obj.model = glm::scale(obj.model, glm::vec3(obj.scale[0], obj.scale[1], obj.scale[2]));
+		obj.model = glm::scale(obj.model, glm::vec3(obj.scale.x, obj.scale.y, obj.scale.z));
 		
-		if (obj.rotation.x != 0 || obj.rotation.y != 0 || obj.rotation.z != 0){ // x y z
+		if (obj.rotation.x != 0 || obj.rotation.y != 0 || obj.rotation.z != 0){
 			obj.model = glm::rotate(obj.model, angle, glm::vec3(obj.rotation.x, obj.rotation.y, obj.rotation.z));
 		}
 
