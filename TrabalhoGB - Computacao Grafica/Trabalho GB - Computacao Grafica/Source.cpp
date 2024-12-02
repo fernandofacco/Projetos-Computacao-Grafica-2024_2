@@ -832,7 +832,6 @@ std::vector<glm::vec3> generateInfinityControlPoints(int numPoints)
 {
     std::vector<glm::vec3> controlPoints;
 
-    // Intervalo de t: de 0 a 2 * PI
     float step = 2 * 3.14159 / (numPoints - 1);
 
     for (int i = 0; i < numPoints; i++)
@@ -846,11 +845,8 @@ std::vector<glm::vec3> generateInfinityControlPoints(int numPoints)
         float x = (width * cos(t)) / denom;
         float y = (height * width * sin(t) * cos(t)) / denom;
 
-        // Adiciona o ponto ao vetor
         controlPoints.push_back(glm::vec3(x, y, 0.0f));
     }
-
-    // Fecha o laço conectando o último ponto ao primeiro
     controlPoints.push_back(controlPoints[0]);
 
     return controlPoints;
@@ -862,7 +858,6 @@ std::vector<glm::vec3> generateCircleControlPoints(int numPoints)
 
 	float radius = 4.0f;
 
-    // Intervalo de t: de 0 a 2 * PI
     float step = 2 * 3.14159f / numPoints;
 
     for (int i = 0; i < numPoints; i++)
