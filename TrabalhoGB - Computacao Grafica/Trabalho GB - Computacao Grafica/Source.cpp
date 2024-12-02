@@ -138,15 +138,6 @@ int main()
 	// Compilando e buildando o programa de shader
 	Shader shader("phong.vs","phong.fs");
 
-	// Estrutura para armazenar a curva de Bézier e pontos de controle
-    Curve curvaBezier;
-
-    curvaBezier.controlPoints = generateInfinityControlPoints();
-
-    // Gerar pontos da curva de Bézier
-    int numCurvePoints = 100; // Quantidade de pontos por segmento na curva
-    generateGlobalBezierCurvePoints(curvaBezier, numCurvePoints);
-
 	std::string sceneJsonFilePath = "./sceneConfig.json";
 	loadSceneConfig(sceneJsonFilePath);
 	glUseProgram(shader.ID);
