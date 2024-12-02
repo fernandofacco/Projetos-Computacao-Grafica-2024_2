@@ -72,7 +72,7 @@ void renderObjects(Shader& shader, float angle, GLint modelLoc);
 void loadSceneConfig(string filePATH);
 void loadObjectsFromFolder(string objFolderPath, string textureFolderPath, string mtlFolderPath, Curve& curve);
 
-std::vector<glm::vec3> generateInfinityControlPoints(int numPoints = 20);
+std::vector<glm::vec3> generateInfiniteControlPoints(int numPoints = 20);
 std::vector<glm::vec3> generateCircleControlPoints(int numPoints = 20);
 void generateGlobalBezierCurvePoints(Curve &curve, int numPoints);  
 
@@ -440,11 +440,11 @@ void loadSceneConfig(string filePATH){
 			obj.scale = scale;
 			obj.rotation = rotation;
 
-            if (objData.contains("curveAnimation") && (objData["curveAnimation"] == "infinity" || objData["curveAnimation"] == "circle")) {
+            if (objData.contains("curveAnimation") && (objData["curveAnimation"] == "infinite" || objData["curveAnimation"] == "circle")) {
 				Curve curvaBezier;
 
-                if (objData["curveAnimation"] == "infinity"){
-					curvaBezier.controlPoints = generateInfinityControlPoints();
+                if (objData["curveAnimation"] == "infinite"){
+					curvaBezier.controlPoints = generateInfiniteControlPoints();
 				} else if (objData["curveAnimation"] == "circle"){
 					curvaBezier.controlPoints = generateCircleControlPoints();
 				}
@@ -819,7 +819,7 @@ void loadMTL(string filePath, Object &obj)
 	}
 }
 
-std::vector<glm::vec3> generateInfinityControlPoints(int numPoints)
+std::vector<glm::vec3> generateInfiniteControlPoints(int numPoints)
 {
     std::vector<glm::vec3> controlPoints;
 
